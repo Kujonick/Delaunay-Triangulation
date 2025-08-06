@@ -1,3 +1,10 @@
+from structure import Point, Edge, Face
+from drawing import draw_traingulation
+from collections import deque 
+from typing import List, Set
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
+
 class Delunay:
     def __init__(self,T):
         ## 1
@@ -21,25 +28,25 @@ class Delunay:
         D = Point(min_x,max_y)
         self.startingPoints = [A,B,C,D]
         ## 2
-        e1 = create_edge(A,B)
-        e2 = create_edge(B,C)
-        e3 = create_edge(C,A)
+        e1 = Edge.create_edge(A,B)
+        e2 = Edge.create_edge(B,C)
+        e3 = Edge.create_edge(C,A)
         T = [e1,e2,e3]
         for i in range(3):
-            connect_edges(T[i],T[(i+1)%3])
-        connect_edges(e2.twin,e1.twin)
+            Edge.connect_two(T[i], T[(i+1)%3])
+        Edge.connect_two(e2.twin,e1.twin)
         # ---------------
         #self.create_face(T)
-        self.middleFace = self.create_face(T)
+        self.middleFace: Face = self.create_face(T)
         # ---------------
-        e4 = create_edge(C,D)
-        e5 = create_edge(D,A)
+        e4 = Edge.create_edge(C,D)
+        e5 = Edge.create_edge(D,A)
         T = [e3.twin,e4,e5]
         for i in range(3):
-            connect_edges(T[i],T[(i+1)%3])
-        connect_edges(e1.twin,e5.twin)
-        connect_edges(e5.twin,e4.twin)
-        connect_edges(e4.twin,e2.twin)
+            Edge.connect_two(T[i], T[(i+1)%3])
+        Edge.connect_two(e1.twin,e5.twin)
+        Edge.connect_two(e5.twin,e4.twin)
+        Edge.connect_two(e4.twin,e2.twin)
         
         self.create_face(T)
     
@@ -52,17 +59,17 @@ class Delunay:
     
     def pointInFace(self,face,p):
         for e in face.edges:
-            if orient(e, p)<0:
+            if e.orient(p) < 0:
                 return False
         return True
         
-    def findPoint(self,p):
+    def findPoint(self, p: Point):
         face = self.middleFace  #  na później
         #face = list(self.FACES)[0]
         while True:
             flag = True
             for e in face.edges:
-                if orient(e, p)<0:
+                if e.orient(p) < 0:
                     face = e.twin.face
                     flag = False
                     break
@@ -75,14 +82,14 @@ class Delunay:
         faces = set()
         for f in self.FACES:
             f.visited = False
-        Q = deque()
+        Q :deque[Face]= deque()
         Q.append(face)
         while Q:
             face = Q.popleft()
             if face.visited:
                 continue
             face.visited = True
-            if pointInCircle(face, p)>=0:
+            if face.point_inside_circle(p) >= 0:
                 faces.add(face)
                 for e in face.edges:
                     if e.twin.face!=None and not e.twin.face.visited:
@@ -90,8 +97,8 @@ class Delunay:
         return faces
                 
     #
-    def combineFaces(self,faces):
-        edges = set()
+    def combineFaces(self, faces: Set[Face]):
+        edges: Set[Edge] = set()
         for face in faces:
             if face == self.middleFace:
                 self.middleFace = None
@@ -116,16 +123,16 @@ class Delunay:
     #
     #face mhsi miec KRAWEDZIE, bo inaczej nie vedzie sie dalo dojsc z punktu do krawedzi (nie bedzie jednoznacznego okreslenia w ktore krawiedzie sa)
     def add_point(self,p): #zmiana, lecimy druga metoda
-        plt.show()
+
         face = self.findPoint(p)
         
-        faces = self.conditionFaces(p,face) # to ma być set zwrocony
+        faces = self.conditionFaces(p, face) # to ma być set zwrocony
 
         firstEdge=self.combineFaces(faces) # a tutaj jedna krawędź
         lastEdge = firstEdge.prev
             
         q = firstEdge.origin
-        e = create_edge(p,q)
+        e = Edge.create_edge(p,q)
         e.next = firstEdge
         e.twin.prev = lastEdge #obaczymy czy trgo nie robie pozniei
         lastEdge.next = e.twin
@@ -134,7 +141,7 @@ class Delunay:
         while True:
             q = f.origin
                 #podczepianie krawedzi
-            e = create_edge(p,q)
+            e = Edge.create_edge(p,q)
             e.next = f
             e.twin.prev = f.prev 
             e.twin.next= e.twin.prev.prev
@@ -173,22 +180,20 @@ class Delunay:
             self.add_point(POINTS.pop())
             if steps:
                 draw_traingulation(self.FACES)
-                plt.show()
                 
     # ----------------------
     
-    def intersecting_edge(self,face,p,pnext):
+    def intersecting_edge(self, face: Face, p: Point, pnext: Point) -> Edge | None:
         C,D = p, pnext
         edge2 = Edge(C)
         edge2.twin = Edge(D)
         for edge in face.edges:
             A = edge.origin
             B = edge.twin.origin
-            if orient(edge,C)*orient(edge,D) > 0:
+            if edge.orient(C) * edge.orient(D) > 0:
                 continue
-            if orient(edge2,A)*orient(edge2,B) <= 0:
+            if edge2.orient(A) * edge2.orient(B) <= 0:
                 return edge
-        return False
             
     def regainEdges(self,steps = False):
         for i in range(len(self.Points)):
@@ -215,6 +220,8 @@ class Delunay:
                 br = False
                 while not br:
                     int_e = self.intersecting_edge(face, firstSearchPoint, pnext)
+                    if int_e is None:
+                        raise ValueError
                     if int_e.face == self.middleFace or int_e.twin.face== self.middleFace:
                         self.middleFace = None
                     self.FACES.remove(int_e.face)
@@ -231,7 +238,7 @@ class Delunay:
                     int_e.twin.next.prev = int_e.prev
 
                     #tworzenie nowej
-                    e1 = create_edge(int_e.prev.origin,int_e.twin.prev.origin)
+                    e1 = Edge.create_edge(int_e.prev.origin,int_e.twin.prev.origin)
                     
                     #podłaczanie
                     e1.origin.edges.add(e1)
@@ -254,7 +261,7 @@ class Delunay:
                         else:
                             self.middleFace = face2
                     face = e1.face
-                    if self.intersecting_edge(face, firstSearchPoint, pnext) == False:
+                    if self.intersecting_edge(face, firstSearchPoint, pnext) is None:
                         face = e1.twin.face
                     for e in p.edges:
                         if e.twin in pnext.edges:
@@ -324,21 +331,21 @@ class Delunay:
             
         
         
-    def start(self,Steps,random):
-        if Steps:
+    def start(self, steps: bool, random: bool):
+        if steps:
             draw_traingulation(self.FACES)
             print("ADD")
         if random:
-            self.addPointsRandom(steps = Steps)
+            self.addPointsRandom(steps = steps)
         else:
-            self.addPoints(steps = Steps)
-        if Steps:
+            self.addPoints(steps = steps)
+        if steps:
             print("REGAIN")
-        self.regainEdges(steps = Steps)
-        if Steps:
+        self.regainEdges(steps = steps)
+        if steps:
             draw_traingulation(self.FACES)
             plt.show()
             print("ERASE")
-        self.eraseOuterLayer(steps = Steps)
+        self.eraseOuterLayer(steps = steps)
         draw_traingulation(self.FACES)
         plt.show()
